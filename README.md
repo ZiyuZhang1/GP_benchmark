@@ -1,10 +1,9 @@
-# Gene Benchmark (Refactored)
+# Gene Benchmark
 
 ## Overview
-End-to-end disease–gene association benchmarking with a unified configuration:
-- `dga="disgenet"`
-- `time=2019`
-- `time_split=True`
+End-to-end disease–gene association benchmarking pipeline
+![Pipeline Diagram](images/pipline3.png)
+This repository provides a unified and reproducible evaluation framework for gene prioritization (GP). The framework adopts time-based data splitting and ranking-aware evaluation metrics to better reflect realistic disease gene discovery scenarios. It focuses on fair benchmarking and systematic comparison of feature representations, base learning algorithms, and prediction integration strategies.
 
 ## Structure
 - `src/gene_benchmark/config.py` — single source of truth for defaults.
