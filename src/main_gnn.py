@@ -1,16 +1,15 @@
 import os
 import pickle
-from pathlib import Path
+import sys
 
 import numpy as np
 import pandas as pd
 import torch
 from sklearn.preprocessing import MinMaxScaler
-
-from gene_benchmark.config import default_config
-from gene_benchmark.features import get_feature, read_data_timecut
-from gene_benchmark.models.gnn import neg_bagging_gcn, neg_bagging_sage, eval_bagging
-
+from torch_geometric.utils import add_self_loops, to_undirected, coalesce
+from features_reindex import get_feature, read_data_timecut
+from model_gnn import neg_bagging_gcn, neg_bagging_sage, eval_bagging
+from torch_sparse import SparseTensor
 
 METRIC_COLUMNS = [
     'top_recall_25',
@@ -82,7 +81,7 @@ def evaluate_disease(disease, time, feature_list, df, y, edge_index, methods, ti
         raise ValueError(f'No training positives remain for disease {disease} at time {time}.')
 
     neg_idx = df_with_test.index[y == 0]
-    df_features = df_with_test.drop(columns='test')
+    df_clean = df_with_test.drop(columns='test')
 
     neg_candidates = np.concatenate([neg_idx.to_numpy(), test_pos_idx.to_numpy()])
     y_test = np.concatenate([
@@ -101,7 +100,12 @@ def evaluate_disease(disease, time, feature_list, df, y, edge_index, methods, ti
     base_seed = 42
     seed_list = [base_seed + i for i in range(num_iterations)]
 
-    args_list = [
+    result_df = pd.DataFrame(columns=RESULT_COLUMNS)
+    for feature_name in feature_list:
+        select_columns = [col for col in df_clean.columns if col.startswith(feature_name)]
+        df_features = df_clean[select_columns].copy()
+        
+        args_list = [
         (
             neg_candidates,
             5 * len(train_pos_idx),
@@ -109,50 +113,47 @@ def evaluate_disease(disease, time, feature_list, df, y, edge_index, methods, ti
             df_features,
             y,
             edge_index,
-            feature_list,
+            feature_name,
             test_index,
             seed,
         )
-        for seed in seed_list
-    ]
+        for seed in seed_list]
 
-    result_df = pd.DataFrame(columns=RESULT_COLUMNS)
+        if 'gcn' in methods:
+            print('GCN model')
+            bagging_y_scores = [neg_bagging_gcn(args) for args in args_list]
 
-    if 'gcn' in methods:
-        print('GCN model')
-        bagging_y_scores = [neg_bagging_gcn(args) for args in args_list]
+            all_preds, all_aucs = zip(*bagging_y_scores)
+            final_y_score = mask_mean(all_preds)
+            mean_auc = float(np.mean(all_aucs))
+            print(f'gcn validation auc: {mean_auc:.4f}')
 
-        all_preds, all_aucs = zip(*bagging_y_scores)
-        final_y_score = mask_mean(all_preds)
-        mean_auc = float(np.mean(all_aucs))
-        print(f'gcn validation auc: {mean_auc:.4f}')
+            ranked_predict_index, results = eval_bagging(final_y_score, y_test)
+            result_df.loc[len(result_df.index)] = ['gcn', 1, f"{feature_name}-0-0-0", *results]
+            predcition_collection['gcn_'+feature_name] = final_y_score
+        # if 'gat' in methods:
+        #     bagging_y_scores = [neg_bagging_gat(args) for args in args_list]
 
-        ranked_predict_index, results = eval_bagging(final_y_score, y_test)
-        result_df.loc[len(result_df.index)] = ['random_negative', 1, 'gcn-0-0-0', *results]
-        predcition_collection['gcn'] = final_y_score
-    # if 'gat' in methods:
-    #     bagging_y_scores = [neg_bagging_gat(args) for args in args_list]
+        #     all_preds, all_aucs = zip(*bagging_y_scores)
+        #     final_y_score = mask_mean(all_preds)
+        #     mean_auc = float(np.mean(all_aucs))
+        #     print(f'gat validation auc: {mean_auc:.4f}')
 
-    #     all_preds, all_aucs = zip(*bagging_y_scores)
-    #     final_y_score = mask_mean(all_preds)
-    #     mean_auc = float(np.mean(all_aucs))
-    #     print(f'gat validation auc: {mean_auc:.4f}')
+        #     ranked_predict_index, results = eval_bagging(final_y_score, y_test)
+        #     result_df.loc[len(result_df.index)] = ['random_negative', 1, 'gat-0-0-0', *results]
+        #     predcition_collection['gat'] = final_y_score
+        if 'sage' in methods:
+            print('graphsage model')
+            bagging_y_scores = [neg_bagging_sage(args) for args in args_list]
 
-    #     ranked_predict_index, results = eval_bagging(final_y_score, y_test)
-    #     result_df.loc[len(result_df.index)] = ['random_negative', 1, 'gat-0-0-0', *results]
-    #     predcition_collection['gat'] = final_y_score
-    if 'sage' in methods:
-        print('graphsage model')
-        bagging_y_scores = [neg_bagging_sage(args) for args in args_list]
+            all_preds, all_aucs = zip(*bagging_y_scores)
+            final_y_score = mask_mean(all_preds)
+            mean_auc = float(np.mean(all_aucs))
+            print(f'gat validation auc: {mean_auc:.4f}')
 
-        all_preds, all_aucs = zip(*bagging_y_scores)
-        final_y_score = mask_mean(all_preds)
-        mean_auc = float(np.mean(all_aucs))
-        print(f'gat validation auc: {mean_auc:.4f}')
-
-        ranked_predict_index, results = eval_bagging(final_y_score, y_test)
-        result_df.loc[len(result_df.index)] = ['random_negative', 1, 'sage-0-0-0', *results]
-        predcition_collection['sage'] = final_y_score
+            ranked_predict_index, results = eval_bagging(final_y_score, y_test)
+            result_df.loc[len(result_df.index)] = ['sage', 1, f"{feature_name}-0-0-0", *results]
+            predcition_collection['sage_'+feature_name] = final_y_score
 
     return result_df, predcition_collection
 
@@ -161,13 +162,30 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'Running GNN pipeline on device: {device}')
 
-    cfg = default_config()
-    root = str(cfg.root)
-    time_split = cfg.time_split
-    feature_list = list(cfg.feature_list)
-    out_path = os.path.join(root, 'results/gnn')
-    out_path_pred = out_path + '_pred'
-    time = cfg.time
+    root = '/itf-fi-ml/shared/users/ziyuzh/svm'
+    time_split = True
+    # test_bug = True
+    test_bug = False
+
+    if test_bug:
+        feature_list = ['uniport_ppi_2019',
+        'ppi_2019_dw_40',
+        'uniport_bio',
+        'uniport_seq',
+        'uniport_esm',
+        'diffusion_2019_pca']
+        # feature_list = ['uniport_ppi_2019']
+        out_path = os.path.join(root, 'results/2019_gcn_deoversmooth_less_smooth')
+        # out_path = os.path.join(root, 'results/2019_gnn_improved_sage')
+        out_path_pred = out_path + '_pred'
+        time = 2019
+    else:
+        if len(sys.argv) < 4:
+            raise ValueError('Expected arguments: <comma_separated_features> <output_dir> <time_cutoff>')
+        feature_list = sys.argv[1].split(',')
+        out_path = os.path.join(root, sys.argv[2])
+        out_path_pred = out_path + '_pred'
+        time = int(sys.argv[3])
 
     os.makedirs(out_path, exist_ok=True)
     os.makedirs(out_path_pred, exist_ok=True)
@@ -179,7 +197,7 @@ def main():
         'uniport_bio',
         'uniport_seq',
         'uniport_esm',
-        'diffusion_2019',
+        'diffusion_2019_pca',
     ]
 
     for feature in time_feature_list:
@@ -217,6 +235,15 @@ def main():
     edge_path = os.path.join(root, 'data/stringdb/edge_2019.csv')
     edge_index = build_edge_index(merged_df['string_id'].tolist(), edge_path)
 
+    num_nodes = len(merged_df)
+    edge_index = to_undirected(edge_index, num_nodes=num_nodes)
+    edge_index, _ = add_self_loops(edge_index, num_nodes=num_nodes)
+    edge_index = coalesce(edge_index, num_nodes=num_nodes)
+
+    row, col = edge_index
+    adj_t = SparseTensor(row=col, col=row, sparse_sizes=(num_nodes, num_nodes))
+    del edge_index
+
     selected_diseases = []
     if time_split:
         for disease_id in all_df['disease_id'].unique():
@@ -234,12 +261,12 @@ def main():
 
     all_results = []
     # methods = ['gcn']
-    # methods = ['gcn','sage']
-    methods = ['sage']
+    methods = ['gcn','sage']
+    # methods = ['gcn']
 
 
-    for disease in selected_diseases[:1]:
-        # disease = 'ICD10_C50'
+    for disease in selected_diseases:
+        # disease = 'ICD10_D83'
         print(disease, len(all_df[all_df['disease_id'] == disease]))
         df, y = read_data_timecut(disease, all_df, merged_df, time)
         result_df, predcition_collection = evaluate_disease(
@@ -248,7 +275,7 @@ def main():
             feature_list,
             df,
             y,
-            edge_index,
+            adj_t,
             methods,
             time_split,
         )

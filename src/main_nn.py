@@ -1,23 +1,14 @@
-import os
-import pickle
-import sys
-from collections import defaultdict
-
-import numpy as np
 import pandas as pd
-import torch
+import os
+from features_reindex import get_feature, read_data, read_data_timecut
+import pickle
+# from model_nn_uniport import enriched_set, neg_bagging, calculate_jac_sim, eval_bagging
+from model_nn_non_para import enriched_set, neg_bagging_early, neg_bagging_mid, neg_bagging_later, calculate_jac_sim, eval_bagging
 from sklearn.preprocessing import MinMaxScaler
-
-from gene_benchmark.config import default_config
-from gene_benchmark.features import get_feature, read_data, read_data_timecut
-from gene_benchmark.models.nn_non_para import (
-    calculate_jac_sim,
-    enriched_set,
-    eval_bagging,
-    neg_bagging_early,
-    neg_bagging_later,
-    neg_bagging_mid,
-)
+import sys
+import torch
+import numpy as np
+from collections import defaultdict
 
 def mask_mean(all_preds):
     arrays = np.stack([arr for arr, _ in all_preds])          # shape: (n, d)
@@ -210,13 +201,25 @@ def evaluate_disease(disease, time, feature_list, df, y, methods,time_spilt):
         return result_df, predcition_collection
 def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    cfg = default_config()
-    root = str(cfg.root)
-    time_spilt = cfg.time_split
-    feature_list = list(cfg.feature_list)
-    out_path = os.path.join(root,'results/nn_non_para')
-    out_path_pred = out_path+'_pred'
-    time = cfg.time
+    root = '/itf-fi-ml/shared/users/ziyuzh/svm'
+    time_spilt = True
+    # test_bug = True
+    test_bug = False
+
+    if test_bug:
+        # feature_list = ['uniport_ppi_2017','uniport_exp','uniport_seq','uniport_esm']
+        # feature_list = ['uniport_ppi_2017','ppi_2017_dw_80','uniport_exp','uniport_seq','uniport_esm']
+        # feature_list = ['ppi_2019','bioconcept']
+        # feature_list = ['ppi_2019_short','bioconcept_short']
+        feature_list = ['uniport_ppi_2019','ppi_2019_dw_40','uniport_bio','uniport_seq','uniport_esm','diffusion_2019_2']
+        out_path = os.path.join(root,'results/temp')
+        out_path_pred = out_path+'_pred'
+        time = 2019
+    else:
+        feature_list = sys.argv[1].split(',')
+        out_path = os.path.join(root,sys.argv[2])
+        out_path_pred = out_path+'_pred'
+        time = int(sys.argv[3])
 
     os.makedirs(out_path, exist_ok=True)
     os.makedirs(out_path_pred, exist_ok=True)
@@ -242,10 +245,11 @@ def main():
             merged_df = pd.merge(merged_df, feature_df, on='string_id', how='inner')
         del feature_df  # Free memory
 
-    all_df = pd.read_csv(os.path.join(root,'data/disgent_2020/timecut/dga_time_uniport.csv'))
+    all_df = pd.read_csv('/itf-fi-ml/shared/users/ziyuzh/svm/data/disgent_2020/timecut/dga_time_uniport.csv')
     all_df = all_df[all_df['string_id'].isin(merged_df['string_id'])]
 
-    methods = ['early_fusion','mid_fusion','later_fusion_avg','later_fusion']
+    # methods = ['early_fusion','mid_fusion','later_fusion_avg','later_fusion']
+    methods = ['early_fusion','mid_fusion','later_fusion_avg']
     # methods = ['later_fusion']
 
 

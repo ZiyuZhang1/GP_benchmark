@@ -1,23 +1,22 @@
-import os
-import pickle
-from collections import defaultdict
-from multiprocessing import Pool
-
 import numpy as np
 import pandas as pd
-from rdkit.ML.Scoring.Scoring import CalcBEDROC
-from scipy.linalg import eigh
-from scipy.stats import rankdata
 from sklearn import svm
+from rdkit.ML.Scoring.Scoring import CalcBEDROC
+# from pseudo_label import select_pseudo_negatives
 from sklearn.metrics import roc_auc_score
+import os
+import pickle
+# import gseapy as gp
+# from concurrent.futures import ProcessPoolExecutor
+# import functools
+from multiprocessing import Pool
+from collections import defaultdict
 from sklearn.metrics.pairwise import rbf_kernel
-from sklearn.model_selection import StratifiedKFold
 from sklearn.neighbors import NearestNeighbors
-
-from gene_benchmark.config import default_config
-
-CFG = default_config()
-UNI2NAME_PATH = CFG.data_dir / "uniport_id/uni2name.pkl"
+from scipy.linalg import eigh
+from sklearn.model_selection import StratifiedKFold
+from scipy.stats import rankdata
+# import glob
 
 def merge_results(results_list):
     merged = defaultdict(list)
@@ -161,7 +160,7 @@ def eval_bagging(y_scores, y_test):
         CalcBEDROC(scores, col=0, alpha=5.3)
     )
 
-with open(UNI2NAME_PATH, 'rb') as file:
+with open('/itf-fi-ml/shared/users/ziyuzh/svm/data/uniport_id/uni2name.pkl', 'rb') as file:
     uni2name_dict = pickle.load(file)
 
 def is_spd(A, tol=1e-8):
@@ -412,9 +411,10 @@ def one_fold_evaluate(disease, time, feature_list, df,y,train_idx,test_idx,metho
     neg_df_add_test_pos = pd.concat([neg_df, test_pos_df])
 
     if 'random_negative' in methods:
-        # kernel_dir_path = os.path.join('/itf-fi-ml/shared/users/ziyuzh/gene_benchmark/results/dw_auc',str(time))
-        # kernel_dir_path = os.path.join('/itf-fi-ml/shared/users/ziyuzh/gene_benchmark/results/dw_auc_norm_test',str(time))
-        kernel_dir_path = os.path.join(str(CFG.results_dir), 'dw_auc_norm', str(time))
+        # kernel_dir_path = os.path.join('/itf-fi-ml/shared/users/ziyuzh/svm/results/dw_auc',str(time))
+        # kernel_dir_path = os.path.join('/itf-fi-ml/shared/users/ziyuzh/svm/results/dw_auc_norm_test',str(time))
+
+        kernel_dir_path = os.path.join('/itf-fi-ml/shared/users/ziyuzh/svm/results/dw_auc_norm',str(time))
         
         os.makedirs(kernel_dir_path, exist_ok=True)
         kernel_pkl_path = os.path.join(kernel_dir_path,'path_save.pkl')
@@ -537,7 +537,7 @@ def one_fold_evaluate(disease, time, feature_list, df,y,train_idx,test_idx,metho
         #     diff = any('diffusion' in f for f in agg_feature)
         #     if diff:
         #         # Load diffusion data only once if needed
-        #         with open('/itf-fi-ml/shared/users/ziyuzh/gene_benchmark/results/df/2019/uniport_diffusion_K_2.pkl', 'rb') as f:
+        #         with open('/itf-fi-ml/shared/users/ziyuzh/svm/results/df/2019/uniport_diffusion_K_2.pkl', 'rb') as f:
         #             diffusion_data = pickle.load(f)
         #     else:
         #         diffusion_data = None
@@ -560,7 +560,7 @@ def one_fold_evaluate(disease, time, feature_list, df,y,train_idx,test_idx,metho
         #     # X_concat_train = X_concat[train_index_loc]
 
         #     feature_names = '-'.join(agg_feature)
-        #     early_dir = '/itf-fi-ml/shared/users/ziyuzh/gene_benchmark/results/early_concat'
+        #     early_dir = '/itf-fi-ml/shared/users/ziyuzh/svm/results/early_concat'
         #     early_files = glob.glob(os.path.join(early_dir, f'{feature_names}*.pkl'))
             
         #     feature_names, K_path = compute_kernels(X_concat, feature_names, early_dir, False)

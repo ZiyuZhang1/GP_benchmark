@@ -1,21 +1,18 @@
 import copy
-import pickle
 
-import gseapy as gp
-import numpy as np
-import pandas as pd
 import torch
-import torch.multiprocessing as mp
 import torch.nn as nn
 import torch.optim as optim
+import torch.multiprocessing as mp
+import numpy as np
+import pandas as pd
 from rdkit.ML.Scoring.Scoring import CalcBEDROC
+# from pseudo_label import select_pseudo_negatives
 from sklearn.metrics import roc_auc_score
-from sklearn.model_selection import train_test_split
+import gseapy as gp
+import pickle
 from torch.utils.data import DataLoader, TensorDataset, random_split
-
-from gene_benchmark.config import default_config
-
-CFG = default_config()
+from sklearn.model_selection import train_test_split
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
@@ -153,7 +150,7 @@ def eval_bagging(y_scores, y_test):
         CalcBEDROC(scores, col=0, alpha=16.1),
         CalcBEDROC(scores, col=0, alpha=5.3)
     )
-with open(CFG.data_dir / "uniport_id/uni2name.pkl", 'rb') as file:
+with open('/itf-fi-ml/shared/users/ziyuzh/svm/data/uniport_id/uni2name.pkl', 'rb') as file:
     uni2name_dict = pickle.load(file)
 
 def enriched_set(input_ids,time):

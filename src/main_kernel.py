@@ -1,26 +1,45 @@
+import pandas as pd
 import os
+from features_reindex import get_feature, read_data, read_data_timecut
+from model_diffusion import evaluate_disease
 import pickle
-from pathlib import Path
 import sys
 import multiprocessing as mp
-
-import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 
-from gene_benchmark.config import default_config
-from gene_benchmark.features import get_feature, read_data, read_data_timecut
-from gene_benchmark.models.diffusion import evaluate_disease
+
+root = '/itf-fi-ml/shared/users/ziyuzh/svm'
+
+# time_spilt = True
+# feature = 'ppi_'+str(time)
+
+time_spilt = True
+# test_bug = True
+test_bug = False
+
+if test_bug:
+    # feature_list = ['uniport_ppi_2019','uniport_bio','uniport_seq','uniport_esm']
+    # feature_list = ['ppi_2019','bioconcept']
+    # feature_list = ['uniport_ppi_2017','ppi_2017_dw_80','uniport_exp','uniport_seq','uniport_esm']
+    # feature_list = ['uniport_ppi_2017','ppi_2017_dw_80','uniport_exp','uniport_seq']
+    # feature_list = ['uniport_ppi_2019','ppi_2019_dw_40','uniport_bio','uniport_seq','uniport_esm']
+    feature_list = ['uniport_ppi_2019','ppi_2019_dw_40','uniport_bio','uniport_seq','uniport_esm','diffusion_2019']
+    # feature_list = ['uniport_ppi_2019']
+    # feature_list = ['uniport_ppi_2019','ppi_2019_dw_40','uniport_bio','uniport_seq','uniport_esm']
 
 
-cfg = default_config()
-root = str(cfg.root)
+    # dga = 'opentarget'
+    dga = 'disgenet'
 
-time_spilt = cfg.time_split
-feature_list = list(cfg.feature_list)
-dga = cfg.dga
-out_path = os.path.join(root,'results/diffusion')
-out_path_pred = out_path+'_pred/pred.pkl'
-time = cfg.time
+    out_path = os.path.join(root,'results/temp')
+    out_path_pred = out_path+'_pred/pred.pkl'
+    time = 2019
+else:
+    feature_list = sys.argv[1].split(',')
+    out_path = os.path.join(root,sys.argv[2])
+    out_path_pred = out_path+'_pred'
+    time = int(sys.argv[3])
+    dga = sys.argv[4]
 
 os.makedirs(out_path, exist_ok=True)
 os.makedirs(out_path_pred, exist_ok=True)
@@ -59,20 +78,15 @@ for feature in time_feature_list:
 name_list = feature_list + ['string_id']
 
 merged_df = merged_df[[col for col in merged_df.columns if any(item in col for item in name_list)]]
-# merged_df.columns = merged_df.columns.str.replace('uniport_ppi_2019_', '', regex=False)
-# merged_df.to_csv('/itf-fi-ml/shared/users/ziyuzh/gene_benchmark/data/input_deep_svd/node2vec_features.csv',index=False)
+
 if dga == 'disgenet':
-    all_df = pd.read_csv(os.path.join(root,'data/disgent_2020/timecut/dga_time_uniport.csv'))
+    all_df = pd.read_csv('/itf-fi-ml/shared/users/ziyuzh/svm/data/disgent_2020/timecut/dga_time_uniport.csv')
 elif dga == 'opentarget':
-    all_df = pd.read_csv(os.path.join(root,'data/opentarget/ot_dga_time_uni.csv'))
+    all_df = pd.read_csv('/itf-fi-ml/shared/users/ziyuzh/svm/data/opentarget/ot_dga_time_uni.csv')
     all_df = all_df[all_df['score']>=0.4]
 
 all_df = all_df[all_df['string_id'].isin(merged_df['string_id'])]
-# all_df = pd.read_csv('/itf-fi-ml/shared/users/ziyuzh/gene_benchmark/data/disgent_2020/timecut/align_disgent_with_time.csv')
 
-# methods = ['ooc','random_negative','pseudo_labeling','pseudo_labeling_mask']
-# methods = ['random_negative','pseudo_labeling','pseudo_labeling_mask','pseudo_labeling_cluster_all_mask']
-# methods = ['random_negative','random_negative_bagging','random_pos_negative_bagging']
 methods = ['random_negative']
 
 if time_spilt:
@@ -96,7 +110,6 @@ print(feature_list, len(selected_diseases),len(merged_df))
 all_results = []
 
 for disease in selected_diseases:
-    disease = 'ICD10_M41'
     print(disease,len(all_df[all_df['disease_id']==disease]))
     if time_spilt:
         df, y = read_data_timecut(disease, all_df, merged_df,time)
