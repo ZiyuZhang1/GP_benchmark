@@ -1,21 +1,47 @@
-*.zip
-*.tar.gz
+# Large data files
 *.csv
-*.fa
-*.txt
-data/prose/
 *.pkl
 *.bin
-*.json
-*.obo
 *.pt
-*.pptx
+*.txt
+*.fa
+*.obo
 *.gaf
-data/pre_processed_features/text_minning_2015
-data/disgent_2020/gene_info
-codes/OMIM_process.ipynb
-resultsdata/pre_processed_features/text_minning_2015/text.csv.bak.bak
-*.log
-*.html
+*.json
+*.zip
+*.tar.gz
+
+# Results and logs (generated at runtime)
+results/
+logs/
+
+# Office / presentation files
+*.pptx
 *.xlsx
-*.tsv
+*.html
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Environment
+.env
+.venv/
+env/
+venv/
+
+# Specific data subdirectories to exclude
+data/prose/
+data/pre_processed_features/text_minning_2015/
+data/disgent_2020/gene_info/
+data/opentarget/

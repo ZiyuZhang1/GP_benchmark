@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
@@ -5,6 +6,9 @@ from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import StratifiedKFold
 from rdkit.ML.Scoring.Scoring import CalcBEDROC
 import pickle
+
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_TEMP_PRED_DIR = os.path.join(_ROOT, 'results', 'temp_pred')
 
 def _collect_feature_blocks(frame, feature_list):
     blocks = []
@@ -158,7 +162,8 @@ def neg_bagging_later(args):
 
         X_test = test_df[cols].values.astype(np.float32)
         preds = model.predict_proba(X_test)[:, 1]
-        preds_path = f'/itf-fi-ml/shared/users/ziyuzh/svm/results/temp_pred/{seed}{feature_name}.pkl'
+        os.makedirs(_TEMP_PRED_DIR, exist_ok=True)
+        preds_path = os.path.join(_TEMP_PRED_DIR, f'{seed}{feature_name}.pkl')
         with open(preds_path, "wb") as f:
             pickle.dump(preds, f)
         print('save file:', preds_path)

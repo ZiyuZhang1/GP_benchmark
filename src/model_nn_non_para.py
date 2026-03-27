@@ -1,4 +1,5 @@
 import copy
+import os
 
 import torch
 import torch.nn as nn
@@ -15,7 +16,9 @@ from torch.utils.data import DataLoader, TensorDataset, random_split
 from sklearn.model_selection import train_test_split
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    
+
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 def average_rank_ratio(y_scores, y_test):
     """
     Calculate the average predicted rank of true positives.
@@ -150,7 +153,7 @@ def eval_bagging(y_scores, y_test):
         CalcBEDROC(scores, col=0, alpha=16.1),
         CalcBEDROC(scores, col=0, alpha=5.3)
     )
-with open('/itf-fi-ml/shared/users/ziyuzh/svm/data/uniport_id/uni2name.pkl', 'rb') as file:
+with open(os.path.join(_ROOT, 'data/uniport_id/uni2name.pkl'), 'rb') as file:
     uni2name_dict = pickle.load(file)
 
 def enriched_set(input_ids,time):
