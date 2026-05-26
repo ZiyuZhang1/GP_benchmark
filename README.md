@@ -32,16 +32,15 @@ Given a set of known gene–disease associations (GDAs) up to a cutoff year (e.g
 
 Each gene is represented by a multi-view feature vector assembled from:
 - Protein–protein interaction (PPI) network embeddings
-- Protein sequence and language-model embeddings
-- Network diffusion features
+- Protein sequence embeddings
 - Bioconcept (biomedical literature) embeddings
 
 Five model families are benchmarked:
 
 | Model | Description |
 |-------|-------------|
-| **Diffusion-SVM** | Log-matrix diffusion kernels + precomputed-kernel SVM with bagging |
-| **Random Forest (RF)** | Early-fusion and late-fusion random forest with negative bagging |
+| **Kernel method** | Kernel method with negative bagging, allow early/lid/late fusion |
+| **Random Forest (RF)** | Random forest with negative bagging |
 | **Matrix Factorization (MF)** | Bayesian matrix factorisation (SMURFF) with multi-view side information |
 | **Neural Network (NN)** | Multi-layer perceptron with early, mid, and late feature fusion |
 | **Graph Neural Network (GNN)** | GCN and GraphSAGE operating on the STRING PPI graph |
@@ -93,12 +92,12 @@ GP_benchmark/
 ├── src/                           # All source code
 │   ├── config.py                  # Centralised REPO_ROOT path
 │   ├── features_reindex.py        # Feature loading utilities
-│   ├── main_diffusion.py          # Diffusion-SVM entry point
+│   ├── main_diffusion.py          # Kernel method entry point
 │   ├── main_gnn.py                # GNN entry point
 │   ├── main_mf.py                 # Matrix factorisation entry point
 │   ├── main_nn_non_para.py        # Neural network entry point
 │   ├── main_rf.py                 # Random forest entry point
-│   ├── model_diffusion.py         # Diffusion-SVM implementation
+│   ├── model_diffusion.py         # Kernel method implementation
 │   ├── model_gnn.py               # GNN implementation (GCN / GraphSAGE)
 │   ├── model_mf.py                # MF implementation (SMURFF)
 │   ├── model_nn_non_para.py       # NN implementation
@@ -127,7 +126,7 @@ scipy
 scikit-learn
 rdkit          # BEDROC metric
 smurff         # Bayesian matrix factorisation (MF model)
-gseapy         # Gene set enrichment (NN model)
+gseapy         # Gene set enrichment
 ```
 
 ### Deep-learning dependencies (required for NN and GNN models)
@@ -146,7 +145,7 @@ The benchmark uses **two separate environments** due to conflicting dependency r
 
 | Environment | Models | Key packages |
 |-------------|--------|--------------|
-| `.venv` | Diffusion-SVM, RF, MF | `smurff`, `rdkit`, `gseapy`, `scikit-learn` |
+| `.venv` | Kernel method, RF, MF | `smurff`, `rdkit`, `gseapy`, `scikit-learn` |
 | `new_esm_env` | NN, GNN | `torch`, `torch-geometric`, `torch-sparse` |
 
 `run_all.sh` and `run_smoke.sh` activate each environment automatically.
@@ -161,7 +160,7 @@ git clone <repo-url> GP_benchmark
 cd GP_benchmark
 ```
 
-**Environment 1** (Diffusion-SVM / RF / MF):
+**Environment 1** (Kernel method / RF / MF):
 
 ```bash
 python -m venv .venv
@@ -207,7 +206,7 @@ All data files must be placed inside the `data/` directory. The table below list
 
 ### Pre-computed kernel cache
 
-The `results/dw_auc_norm/2019/` directory stores pre-computed SVM kernel matrices that are reused across disease evaluations. If it does not exist, the Diffusion-SVM model will compute and cache them on first run. This step is compute-intensive but only needs to happen once.
+The `results/dw_auc_norm/2019/` directory stores pre-computed SVM kernel matrices that are reused across disease evaluations. If it does not exist, the Kernel method model will compute and cache them on first run. This step is compute-intensive but only needs to happen once.
 
 ### Expected CSV columns
 
@@ -249,7 +248,7 @@ for f in required:
 "
 ```
 
-### Smoke test (one disease per model, minutes–hours)
+### Smoke test (one disease per model)
 
 Verifies that every model can run end-to-end without errors:
 
@@ -267,7 +266,7 @@ Results are written to `results/smoke/<model>/`, logs to `logs/smoke/`.
 ./src/run_all.sh
 ```
 
-The script runs all five models sequentially, switching environments automatically. Expected runtime is **several days** on a multi-core CPU server. Output directories and log files are created automatically.
+The script runs all five models sequentially, switching environments automatically. Output directories and log files are created automatically.
 
 ### What `run_all.sh` executes
 
@@ -300,7 +299,7 @@ python main_diffusion.py \
     <time_cutoff_year> \
     '<dga_source>'
 
-# Example: diffusion model, all features, 2019 cutoff, DisGeNET
+# Example: kernel model, all features, 2019 cutoff, DisGeNET
 python main_diffusion.py \
     'uniport_ppi_2019,ppi_2019_dw_40,diffusion_2019,uniport_bio,uniport_seq,uniport_esm' \
     'results/my_run' \
@@ -319,15 +318,9 @@ python main_mf.py '<features>' '<output_dir>' <year> '<dga>' <burnin> <num_sampl
 
 ## 8. Models
 
-### 8.1 Diffusion-SVM (`main_diffusion.py`, `model_diffusion.py`)
+### 8.1 Kernel method (`main_diffusion.py`, `model_diffusion.py`)
 
-Computes a Riemannian log-map kernel from network diffusion embeddings:
-
-```
-K_log = log(K)  [via eigendecomposition]
-```
-
-An RBF SVM is trained on `K_log` with a precomputed kernel. Hyperparameters (gamma ratio, regularisation `C`) are selected by 3-fold stratified cross-validation using BEDROC as the primary criterion.
+An RBF kernel is trained on `K_log` with a precomputed kernel. Hyperparameters (gamma ratio, regularisation `C`) are selected by 3-fold stratified cross-validation using BEDROC as the primary criterion.
 
 Predictions are aggregated from **20 bootstrap bags** (random negative sampling, 5× oversampling of negatives). Overlapping train/test indices in each bag are masked before averaging.
 
@@ -335,12 +328,7 @@ Pre-computed kernel matrices are cached in `results/dw_auc_norm/{year}/` and reu
 
 ### 8.2 Random Forest (`main_rf.py`, `model_rf_uni_inductive.py`)
 
-Two fusion strategies are evaluated:
-
-- **Early fusion**: all feature blocks concatenated → single RF trained end-to-end
-- **Late fusion**: one RF per feature block, predictions averaged (or stacked with a RF meta-learner)
-
-Both use **2 bootstrap bags** (configurable) with 5× negative oversampling. RF hyperparameters are selected from 5 candidate combinations by 3-fold CV. Features are MinMax-scaled before concatenation.
+RF hyperparameters are selected from 5 candidate combinations by 3-fold CV. Features are MinMax-scaled before concatenation.
 
 ### 8.3 Matrix Factorisation (`main_mf.py`, `model_mf.py`)
 
