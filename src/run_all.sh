@@ -1,58 +1,26 @@
-#!/usr/bin/env bash
-# Run the full GP benchmark pipeline.
-#
-# Usage (from the project root):
-#   bash src/run_all.sh
-#
-# Prerequisites
-# -------------
-# Edit MAIN_ENV and ESM_ENV below to point to your virtual/conda environments.
-#   MAIN_ENV  – scikit-learn, smurff, scipy, pandas, rdkit, gseapy
-#   ESM_ENV   – PyTorch, PyTorch Geometric, torch_sparse (for NN and GNN)
+#!/bin/bash
 
-set -euo pipefail
+# Resolve the directory containing this script so the script works from any cwd.
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+cd "$SCRIPT_DIR"
 
-MAIN_ENV=""   # e.g. /path/to/venv  or use: conda activate myenv
-ESM_ENV=""    # e.g. /path/to/esm_env
+LOG_DIR="$SCRIPT_DIR/../logs"
+mkdir -p "$LOG_DIR"
 
-# Feature sets
-FEATURES_FULL="uniport_ppi_2019,ppi_2019_dw_40,diffusion_2019_2,uniport_bio,uniport_seq,uniport_esm"
-FEATURES_PPI="uniport_ppi_2019,ppi_2019_dw_40,diffusion_2019"
-YEAR=2019
+# --- Environment 1: .venv (diffusion / mf / rf) ---
+source /itf-fi-ml/shared/users/ziyuzh/.venv/bin/activate
 
-# Move to project root (parent of this script's directory)
-cd "$(dirname "$0")/.."
-mkdir -p logs
+python main_diffusion.py 'uniport_ppi_2019,ppi_2019_dw_40,diffusion_2019,uniport_bio,uniport_seq,uniport_esm' "results/2019_df_oob_mid" 2019 'disgenet' > "$LOG_DIR/2019_df_oob_mid.log" 2>&1
+python main_diffusion.py 'uniport_ppi_2019,ppi_2019_dw_40,diffusion_2019' "results/2019_df_oob_ppi_mid" 2019 'disgenet' > "$LOG_DIR/2019_df_oob_ppi_mid.log" 2>&1
 
-# ── Main environment ───────────────────────────────────────────────────────────
-source "${MAIN_ENV}/bin/activate"
+python main_mf.py 'uniport_ppi_2019,ppi_2019_dw_40,diffusion_2019_pca,uniport_bio,uniport_seq,uniport_esm' "results/2019_mf" 2019 'disgenet' 200 500 > "$LOG_DIR/2019_mf.log" 2>&1
 
-echo "=== Kernel (diffusion SVM) ==="
-python src/main_kernel.py "${FEATURES_FULL}" "results/2019_kernel_full" ${YEAR} \
-    2>&1 | tee logs/kernel_full.log
-python src/main_kernel.py "${FEATURES_PPI}" "results/2019_kernel_ppi" ${YEAR} \
-    2>&1 | tee logs/kernel_ppi.log
+python main_rf.py 'uniport_ppi_2019,ppi_2019_dw_40,diffusion_2019_2,uniport_bio,uniport_seq,uniport_esm' "results/2019_rf" 2019 > "$LOG_DIR/2019_rf.log" 2>&1
 
-echo "=== Matrix Factorisation ==="
-python src/main_mf.py "${FEATURES_FULL}" "results/2019_mf" ${YEAR} 200 500 \
-    2>&1 | tee logs/mf.log
+# --- Environment 2: new_esm_env (nn / gnn) ---
+source /itf-fi-ml/shared/users/ziyuzh/new_esm_env/bin/activate
 
-echo "=== Random Forest ==="
-python src/main_rf.py "${FEATURES_FULL}" "results/2019_rf" ${YEAR} \
-    2>&1 | tee logs/rf.log
-
-# ── Deep-learning environment ──────────────────────────────────────────────────
-source "${ESM_ENV}/bin/activate"
-
-echo "=== Neural Network ==="
-python src/main_nn.py "${FEATURES_FULL}" "results/2019_nn" ${YEAR} \
-    2>&1 | tee logs/nn.log
-python src/main_nn.py "${FEATURES_PPI}" "results/2019_nn_ppi" ${YEAR} \
-    2>&1 | tee logs/nn_ppi.log
-
-echo "=== Graph Neural Network ==="
-python src/main_gnn.py "${FEATURES_FULL}" "results/2019_gnn" ${YEAR} \
-    2>&1 | tee logs/gnn.log
-
-echo ""
-echo "All pipelines complete. Results are in results/."
+# Stay in GP_benchmark/src — no cd to the old svm/src
+python main_nn_non_para.py 'uniport_ppi_2019,ppi_2019_dw_40,uniport_bio,uniport_seq,uniport_esm,diffusion_2019_2' "results/2019_nn_oob" 2019 > "$LOG_DIR/2019_nn_oob.log" 2>&1
+python main_nn_non_para.py 'uniport_ppi_2019,ppi_2019_dw_40,diffusion_2019_2' "results/2019_nn_oob_ppi" 2019 > "$LOG_DIR/2019_nn_oob_ppi.log" 2>&1
+python main_gnn.py 'uniport_ppi_2019,ppi_2019_dw_40,diffusion_2019_pca,uniport_bio,uniport_seq,uniport_esm' "results/2019_gnn" 2019 > "$LOG_DIR/2019_gnn.log" 2>&1
