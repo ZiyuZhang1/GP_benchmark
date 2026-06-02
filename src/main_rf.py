@@ -214,8 +214,15 @@ def main():
                 # print(type(time),type(sub_df['first_pub_year'].max()))
                 if sub_df['first_pub_year'].max() > time and sub_df['first_pub_year'].min() <= time and len(sub_df[sub_df['first_pub_year']<time]) >=5:
                     selected_diseases.append(disease_id)
-    if os.environ.get('SMOKE_TEST'):
-        selected_diseases = selected_diseases[:1]
+    _one_disease = os.environ.get('ONE_DISEASE_ID')
+    if _one_disease:
+        if _one_disease not in selected_diseases:
+            raise ValueError(
+                f"ONE_DISEASE_ID='{_one_disease}' is not in the selected disease list. "
+                "Check that the ID exists in the dataset and meets temporal split criteria "
+                "(≥15 GDAs total, ≥5 before cutoff, ≥1 after cutoff)."
+            )
+        selected_diseases = [_one_disease]
     print(feature_list, len(selected_diseases),len(merged_df))
     all_results = []
     for disease in selected_diseases:

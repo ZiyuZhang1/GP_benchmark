@@ -2,6 +2,12 @@
 
 A reproducible benchmarking framework that evaluates five machine learning models for **gene–disease association (GDA) prediction** under a strict **temporal holdout** setting. Models are trained on associations published up to a cutoff year and evaluated on associations first reported afterward — simulating prospective discovery.
 
+<p align="center">
+  <img src="images/pipline3.png" alt="GP_benchmark overall pipeline" width="860"/>
+</p>
+
+**Figure:** Overall pipeline. Multi-view gene features (PPI network embeddings, biomedical literature embeddings, sequence embeddings) are combined with a temporal train/test split. Five model families — kernel SVM, Random Forest, Deep Neural Network, Graph Neural Network, and Matrix Factorisation — are evaluated under early-, mid-, and late-fusion strategies. Outputs are ranked gene lists scored against newly-discovered associations (post-cutoff), assessed with AUROC, BEDROC, and top-k recall metrics.
+
 ---
 
 ## Table of Contents
@@ -63,9 +69,12 @@ GP_benchmark/
 ├── data/                          # Input data (see §5)
 │   ├── bioconcept/
 │   │   └── uniport_bio_emb.csv        # Biomedical concept embeddings
-│   ├── diffusion_2019.csv             # Full diffusion features (2019)
-│   ├── diffusion_2019_2.csv           # Variant diffusion features
-│   ├── diffusion_2019_pcs.csv         # PCA-reduced diffusion features
+│   ├── diffusion/                     # Raw inputs for diffusion kernel computation
+│   │   ├── ppi_full_2019.txt          # STRING PPI edge list (required by pre_calculate_diffusion_kernels.py)
+│   │   └── 2019_map.pkl               # ENSP → UniProt ID mapping + merge/delete lists
+│   ├── diffusion_2019.csv             # Pre-computed diffusion node features (full)
+│   ├── diffusion_2019_2.csv           # Diffusion node features (variant 2)
+│   ├── diffusion_2019_pcs.csv         # PCA-reduced diffusion node features
 │   ├── disgent_2020/
 │   │   └── timecut/
 │   │       └── dga_time_uniport.csv   # DisGeNET GDAs with publication year
@@ -84,8 +93,10 @@ GP_benchmark/
 │       └── uni2name.pkl               # UniProt ID → gene name mapping
 │
 ├── results/                       # Model outputs (created at runtime)
-│   └── dw_auc_norm/               # Cached diffusion kernels (pre-computed)
-│       └── 2019/
+│   └── dw_auc_norm/
+│       ├── 2019/                      # Cached per-feature SVM kernel matrices
+│       └── df/
+│           └── 2019/                  # Cached diffusion kernel matrices (K and log K per beta)
 │
 ├── logs/                          # Run logs (created at runtime)
 │
@@ -102,8 +113,10 @@ GP_benchmark/
 │   ├── model_mf.py                # MF implementation (SMURFF)
 │   ├── model_nn_non_para.py       # NN implementation
 │   ├── model_rf_uni_inductive.py  # RF implementation
+│   ├── pre_calculate_diffusion_kernels.py  # Computes diffusion kernel matrices from the PPI graph
 │   ├── run_all.sh                 # Full benchmark pipeline
-│   └── run_smoke.sh               # Lightweight smoke test (one disease)
+│   ├── run_one_disease.sh         # One-disease test (specify an ICD10 ID)
+│   └── run_smoke.sh               # Deprecated alias → run_one_disease.sh
 │
 ├── requirements.txt               # Python dependencies
 └── README.md
@@ -148,7 +161,7 @@ The benchmark uses **two separate environments** due to conflicting dependency r
 | `.venv` | Kernel method, RF, MF | `smurff`, `rdkit`, `gseapy`, `scikit-learn` |
 | `new_esm_env` | NN, GNN | `torch`, `torch-geometric`, `torch-sparse` |
 
-`run_all.sh` and `run_smoke.sh` activate each environment automatically.
+`run_all.sh` and `run_one_disease.sh` activate each environment automatically.
 
 ---
 
@@ -179,7 +192,7 @@ pip install torch-geometric torch-sparse
 pip install numpy pandas scipy scikit-learn rdkit gseapy
 ```
 
-Then update the `source` lines in `src/run_all.sh` and `src/run_smoke.sh` to point to your environment paths.
+Then update the `source` lines in `src/run_all.sh` and `src/run_one_disease.sh` to point to your environment paths.
 
 ---
 
@@ -197,16 +210,39 @@ All data files must be placed inside the `data/` directory. The table below list
 | `data/esmfold/uniport_esm2.csv` | ESM-2 protein language model embeddings | ESMFold / Meta AI |
 | `data/pre_processed_features/seq_emb/uniport_emb.csv` | Sequence-derived embeddings | Computed |
 | `data/bioconcept/uniport_bio_emb.csv` | Biomedical concept embeddings | Computed |
-| `data/diffusion_2019.csv` | Network diffusion features (full) | Computed from STRING |
-| `data/diffusion_2019_2.csv` | Network diffusion features (variant 2) | Computed from STRING |
-| `data/diffusion_2019_pcs.csv` | PCA-reduced diffusion features | Computed |
+| `data/diffusion_2019.csv` | Network diffusion node features (full) | Computed from STRING |
+| `data/diffusion_2019_2.csv` | Network diffusion node features (variant 2) | Computed from STRING |
+| `data/diffusion_2019_pcs.csv` | PCA-reduced diffusion node features | Computed |
 | `data/disgent_2020/timecut/dga_time_uniport.csv` | DisGeNET 2020 GDAs with `first_pub_year` | [DisGeNET](https://www.disgenet.org/) |
 | `data/opentarget/ot_dga_time_uni.csv` | OpenTargets GDAs (used only with `dga=opentarget`) | [Open Targets](https://www.opentargets.org/) |
 | `data/uniport_id/uni2name.pkl` | UniProt ID → gene name dictionary | [UniProt](https://www.uniprot.org/) |
 
-### Pre-computed kernel cache
+The following two files are required specifically by the diffusion kernel pre-computation script:
 
-The `results/dw_auc_norm/2019/` directory stores pre-computed SVM kernel matrices that are reused across disease evaluations. If it does not exist, the Kernel method model will compute and cache them on first run. This step is compute-intensive but only needs to happen once.
+| File path (relative to repo root) | Description | Source |
+|------------------------------------|-------------|--------|
+| `data/diffusion/ppi_full_2019.txt` | STRING PPI edge list used to build the diffusion graph | STRING DB |
+| `data/diffusion/2019_map.pkl` | Pickle of `[merge_groups, delete_ensp, map_dict_aligned]` — maps ENSP node IDs to UniProt IDs | Computed |
+
+### Diffusion kernel cache
+
+The kernel method (`main_diffusion.py`) uses pre-computed diffusion kernel matrices stored under `results/dw_auc_norm/df/2019/`. These are computed once from the raw PPI graph using `src/pre_calculate_diffusion_kernels.py`.
+
+**Automatic computation:** if the cache directory is empty or missing when the kernel method runs, `model_diffusion.py` will automatically invoke `pre_calculate_diffusion_kernels.run(setting='2019')` and populate the cache before continuing. This step is compute-intensive (6 beta values × eigendecomposition of the full PPI adjacency matrix) and only needs to run once.
+
+**Manual pre-computation** (recommended before a full benchmark run):
+
+```bash
+cd src
+source /path/to/.venv/bin/activate
+python pre_calculate_diffusion_kernels.py
+```
+
+The script writes six pairs of files to `results/dw_auc_norm/df/2019/` — one kernel matrix `K` and its matrix logarithm `log K` for each beta value in `{0.1, 0.2, 0.5, 0.8, 1, 2}`.
+
+### Per-feature SVM kernel cache
+
+`results/dw_auc_norm/2019/` stores precomputed RBF kernel matrices (one per non-diffusion feature) used by the SVM. These are computed and cached automatically on first run and reused across diseases.
 
 ### Expected CSV columns
 
@@ -241,6 +277,8 @@ required = [
     'data/opentarget/ot_dga_time_uni.csv',
     'data/stringdb/edge_2019.csv',
     'data/uniport_id/uni2name.pkl',
+    'data/diffusion/ppi_full_2019.txt',
+    'data/diffusion/2019_map.pkl',
 ]
 for f in required:
     p = REPO_ROOT / f
@@ -248,15 +286,15 @@ for f in required:
 "
 ```
 
-### Smoke test (one disease per model)
+### One-disease test
 
-Verifies that every model can run end-to-end without errors:
+Verifies that every model can run end-to-end without errors, on a single disease you specify:
 
 ```bash
-./src/run_smoke.sh
+./src/run_one_disease.sh ICD10_M41
 ```
 
-Results are written to `results/smoke/<model>/`, logs to `logs/smoke/`.
+Replace `ICD10_M41` with any ICD10 disease ID present in the dataset that meets the temporal split criteria. Results are written to `results/one_disease/<disease_id>/<model>/`, logs to `logs/one_disease/`.
 
 ---
 
@@ -320,11 +358,13 @@ python main_mf.py '<features>' '<output_dir>' <year> '<dga>' <burnin> <num_sampl
 
 ### 8.1 Kernel method (`main_diffusion.py`, `model_diffusion.py`)
 
-An RBF kernel is trained on `K_log` with a precomputed kernel. Hyperparameters (gamma ratio, regularisation `C`) are selected by 3-fold stratified cross-validation using BEDROC as the primary criterion.
+For diffusion features, the kernel is derived from the network diffusion matrix via a matrix-logarithm transformation (`K_log = log(K)`). For all other features, an RBF kernel is computed from the raw feature matrix. All kernel matrices are pre-computed once and cached.
 
-Predictions are aggregated from **20 bootstrap bags** (random negative sampling, 5× oversampling of negatives). Overlapping train/test indices in each bag are masked before averaging.
+**Diffusion kernel pre-computation** (`pre_calculate_diffusion_kernels.py`): builds the normalised diffusion kernel `K = exp(-β L)` for six values of `β` (0.1, 0.2, 0.5, 0.8, 1, 2), remaps node IDs from ENSP to UniProt, and saves both `K` and `log K` to `results/dw_auc_norm/df/{year}/`. If the cache is absent when `model_diffusion.py` runs, it calls this script automatically. Manual pre-computation is recommended before a full benchmark run (see §5).
 
-Pre-computed kernel matrices are cached in `results/dw_auc_norm/{year}/` and reused across diseases.
+Hyperparameters (gamma ratio, regularisation `C`) are selected per feature by 3-fold stratified cross-validation using BEDROC as the primary criterion. Predictions are aggregated from **20 bootstrap bags** (random negative sampling, 5× oversampling of negatives). Overlapping train/test indices in each bag are masked before averaging.
+
+Per-feature RBF kernel matrices are cached in `results/dw_auc_norm/{year}/` and reused across diseases.
 
 ### 8.2 Random Forest (`main_rf.py`, `model_rf_uni_inductive.py`)
 
@@ -470,7 +510,7 @@ Obtain the required data files listed in §5 and place them under `data/` follow
 
 ### Step 3: Update environment paths
 
-Edit the `source` lines in `src/run_all.sh` and `src/run_smoke.sh` to point to your virtual environment locations.
+Edit the `source` lines in `src/run_all.sh` and `src/run_one_disease.sh` to point to your virtual environment locations.
 
 ### Step 4: Validate paths
 
@@ -489,6 +529,8 @@ files = [
     'data/opentarget/ot_dga_time_uni.csv',
     'data/stringdb/edge_2019.csv',
     'data/uniport_id/uni2name.pkl',
+    'data/diffusion/ppi_full_2019.txt',
+    'data/diffusion/2019_map.pkl',
 ]
 for f in files:
     p = REPO_ROOT / f
@@ -496,13 +538,13 @@ for f in files:
 "
 ```
 
-### Step 5: Smoke test
+### Step 5: One-disease test
 
 ```bash
-./src/run_smoke.sh
+./src/run_one_disease.sh ICD10_M41
 ```
 
-Check `logs/smoke/` for any `[FAIL]` entries and resolve before running the full benchmark.
+Check `logs/one_disease/` for any `[FAIL]` entries and resolve before running the full benchmark.
 
 ### Step 6: Full benchmark
 

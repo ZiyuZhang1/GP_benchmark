@@ -282,7 +282,11 @@ def select_gamma_ratio(args):
 
     best_bedroc = 0
     best_auc = 0
-    best_params = {'C': None, 'gamma': None}
+    # Initialise with the first available gamma so keys always match the update format.
+    _first_gamma = gamma_ratios[0]
+    _first_path   = X_dict[_first_gamma][0]
+    best_params = {'C_num': 1, 'gamma_ratio': _first_gamma,
+                   'gamma': _first_path.split('_')[-1].replace('.pkl', '')}
 
     # Define stratified k-fold
     skf = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
@@ -307,6 +311,8 @@ def select_gamma_ratio(args):
                 best_svm = svm.SVC(C=C_num, kernel='precomputed')
                 best_svm.fit(X_feature_train, y_cv_train)
                 y_scores = best_svm.decision_function(X_feature_test)
+                if len(np.unique(y_cv_val)) < 2:
+                    continue  # skip fold if only one class present
                 auroc = roc_auc_score(y_cv_val, y_scores)
                 scores = np.column_stack((y_cv_val, y_scores))  # Stack labels and scores as columns
                 scores = scores[scores[:, 1].argsort()[::-1]]
@@ -439,8 +445,37 @@ def one_fold_evaluate(disease, time, feature_list, df,y,train_idx,test_idx,metho
             X_all = []
             
             for feature_name in add_feature_list:
-                select_columns = [col for col in df.columns if col.startswith(feature_name)]
-                X_all.append(df[select_columns].values)
+                if 'diff' in feature_name:
+                    df_path = _REPO_ROOT / 'results' / 'dw_auc_norm' / 'df' / str(time)
+                    kernel_files = [
+                        f for f in os.listdir(str(df_path))
+                        if 'uniport_diffusion_K' in f
+                    ] if df_path.is_dir() else []
+
+                    if not kernel_files:
+                        print(
+                            f'No pre-calculated diffusion kernels found in {df_path}. '
+                            'Running pre_calculate_diffusion_kernels.py ...'
+                        )
+                        import pre_calculate_diffusion_kernels
+                        pre_calculate_diffusion_kernels.run(setting=str(time))
+                        kernel_files = [
+                            f for f in os.listdir(str(df_path))
+                            if 'uniport_diffusion_K' in f
+                        ]
+
+                    print(f'Loading {len(kernel_files)} pre-calculated diffusion kernels from {df_path}')
+                    df_dict = {}
+                    for file in kernel_files:
+                        key = file.split('_')[-1][:-4]
+                        df_dict[key] = [
+                            str(df_path / file),
+                            str(df_path / f'uniport_diffusion_logK_{file.split("_")[-1]}'),
+                        ]
+                    kernels_all_dict['diffusion_2019'] = df_dict
+                else:
+                    select_columns = [col for col in df.columns if col.startswith(feature_name)]
+                    X_all.append(df[select_columns].values)
 
             args_list = list(zip(X_all, add_feature_list, [kernel_dir_path] * len(X_all), [True] * len(X_all)))
             with Pool(min(len(add_feature_list), os.cpu_count(), 4)) as pool:
