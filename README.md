@@ -116,7 +116,6 @@ GP_benchmark/
 │   ├── pre_calculate_diffusion_kernels.py  # Computes diffusion kernel matrices from the PPI graph
 │   ├── run_all.sh                 # Full benchmark pipeline
 │   ├── run_one_disease.sh         # One-disease test (specify an ICD10 ID)
-│   └── run_smoke.sh               # Deprecated alias → run_one_disease.sh
 │
 ├── requirements.txt               # Python dependencies
 └── README.md
